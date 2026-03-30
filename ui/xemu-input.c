@@ -790,7 +790,7 @@ bool xemu_input_bind_xmu(int player_index, int expansion_slot_index,
                         strcmp(xmu_i->filename, filename) == 0) {
                         char *buf =
                             g_strdup_printf("This XMU is already mounted on "
-                                            "player %d slot %c\r\n",
+                                            "player %d slot %c\n",
                                             player_i + 1, 'A' + peripheral_i);
                         xemu_queue_notification(buf);
                         g_free(buf);

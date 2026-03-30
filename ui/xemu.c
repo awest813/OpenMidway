@@ -1064,9 +1064,9 @@ static void display_very_early_init(DisplayOptions *o)
     if (m_context == NULL) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
             "Unable to create OpenGL context",
-            "Unable to create OpenGL context. This usually means the\r\n"
-            "graphics device on this system does not support OpenGL 4.0.\r\n"
-            "\r\n"
+            "Unable to create OpenGL context. This usually means the\n"
+            "graphics device on this system does not support OpenGL 4.0.\n"
+            "\n"
             "OpenMidway cannot continue and will now exit.",
             m_window);
         SDL_DestroyWindow(m_window);
@@ -1129,6 +1129,14 @@ static void display_init(DisplayState *ds, DisplayOptions *o)
 
     num_outputs = 1;
     scon_list = g_new0(struct xemu_console, num_outputs);
+    /*
+     * Bind the QEMU console to the real SDL window before reading native
+     * handles (Win32 HWND, X11 Window). Previously real_window was still NULL
+     * during the loop, so window_id was never set on Windows or Linux/X11.
+     */
+    scon_list[0].real_window = m_window;
+    scon_list[0].winctx = m_context;
+
     for (i = 0; i < num_outputs; i++) {
         QemuConsole *con = qemu_console_lookup_by_index(i);
         assert(con != NULL);
@@ -1144,20 +1152,21 @@ static void display_init(DisplayState *ds, DisplayOptions *o)
         register_displaychangelistener(&scon_list[i].dcl);
 
 #if defined(SDL_VIDEO_DRIVER_WINDOWS)
-        HWND hwnd = (HWND)SDL_GetPointerProperty(SDL_GetWindowProperties(scon_list[i].real_window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+        HWND hwnd = (HWND)SDL_GetPointerProperty(
+            SDL_GetWindowProperties(scon_list[i].real_window),
+            SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
         if (hwnd) {
             qemu_console_set_window_id(con, (uintptr_t)hwnd);
         }
 #elif defined(SDL_VIDEO_DRIVER_X11)
-        Window xwindow = (Window)SDL_GetNumberProperty(SDL_GetWindowProperties(scon_list[i].real_window), SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
+        Window xwindow = (Window)SDL_GetNumberProperty(
+            SDL_GetWindowProperties(scon_list[i].real_window),
+            SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
         if (xwindow) {
             qemu_console_set_window_id(con, xwindow);
         }
 #endif
     }
-
-    scon_list[0].real_window = m_window;
-    scon_list[0].winctx = m_context;
 
     mouse_mode_notifier.notify = mouse_mode_change;
     qemu_add_mouse_mode_change_notifier(&mouse_mode_notifier);

@@ -20,7 +20,8 @@
 #include "xemu-os-utils.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
+#include <string.h>
+#include <ctype.h>
 #include <glib.h>
 #include <glib/gprintf.h>
 
@@ -31,19 +32,80 @@ static char *read_file_if_possible(const char *path)
 		return NULL;
 	}
 
-	fseek(fd, 0, SEEK_END);
-	size_t size = ftell(fd);
-	fseek(fd, 0, SEEK_SET);
+	if (fseek(fd, 0, SEEK_END) != 0) {
+		fclose(fd);
+		return NULL;
+	}
 
-	char *buf = malloc(size+1);
-	int status = fread(buf, 1, size, fd);
-	if (status != size) {
+	long size_long = ftell(fd);
+	if (size_long < 0) {
+		fclose(fd);
+		return NULL;
+	}
+	size_t size = (size_t)size_long;
+
+	if (fseek(fd, 0, SEEK_SET) != 0) {
+		fclose(fd);
+		return NULL;
+	}
+
+	char *buf = malloc(size + 1);
+	if (buf == NULL) {
+		fclose(fd);
+		return NULL;
+	}
+
+	size_t nread = fread(buf, 1, size, fd);
+	fclose(fd);
+	if (nread != size) {
 		free(buf);
 		return NULL;
 	}
 
-	buf[size] = '\x00';
+	buf[size] = '\0';
 	return buf;
+}
+
+/* Parse PRETTY_NAME from os-release (quoted or unquoted, per freedesktop.org). */
+static char *parse_pretty_name_from_os_release(const char *contents)
+{
+	const char *key = "PRETTY_NAME=";
+	char *line = strstr(contents, key);
+	char *end;
+	size_t len;
+	char *out;
+
+	if (line == NULL) {
+		return NULL;
+	}
+
+	line += strlen(key);
+	if (*line == '"') {
+		line++;
+		end = strchr(line, '"');
+		if (end == NULL) {
+			return NULL;
+		}
+		len = (size_t)(end - line);
+	} else {
+		end = line;
+		while (*end && *end != '\n' && *end != '\r') {
+			end++;
+		}
+		while (end > line && isspace((unsigned char)end[-1])) {
+			end--;
+		}
+		len = (size_t)(end - line);
+	}
+
+	if (len == 0) {
+		return NULL;
+	}
+
+	out = g_malloc(len + 1);
+	memcpy(out, line, len);
+	out[len] = '\0';
+	return out;
 }
 
 const char *xemu_get_os_info(void)
@@ -52,33 +114,16 @@ const char *xemu_get_os_info(void)
 	static int attempted_init = 0;
 
 	if (!attempted_init) {
-		char *os_release = NULL;
-
-		// Try to get the Linux distro "pretty name" from /etc/os-release
+		char *pretty = NULL;
 		char *os_release_file = read_file_if_possible("/etc/os-release");
+
 		if (os_release_file != NULL) {
-			char *pretty_name = strstr(os_release_file, "PRETTY_NAME=\"");
-			if (pretty_name != NULL) {
-				pretty_name = pretty_name + 13;
-				char *pretty_name_end = strchr(pretty_name, '"');
-				if (pretty_name_end != NULL) {
-					size_t len = pretty_name_end-pretty_name;
-					os_release = malloc(len+1);
-					assert(os_release != NULL);
-					memcpy(os_release, pretty_name, len);
-					os_release[len] = '\x00';
-				}
-			}
+			pretty = parse_pretty_name_from_os_release(os_release_file);
 			free(os_release_file);
 		}
 
-		os_info = g_strdup_printf("%s",
-			os_release ? os_release : "Unknown Distro"
-			);
-		if (os_release) {
-			free(os_release);
-		}
-
+		os_info = g_strdup(pretty ? pretty : "Unknown Distro");
+		g_free(pretty);
 		attempted_init = 1;
 	}
 
