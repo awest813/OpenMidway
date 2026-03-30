@@ -38,7 +38,7 @@ static const char *get_windows_build_info(void)
                      L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
                      L"ProductName", RRF_RT_REG_SZ, (LPVOID)NULL, &product_name,
                      &product_size) != ERROR_SUCCESS) {
-        return "Windows";
+        return g_strdup("Windows");
     }
 
     bool have_display_version =
